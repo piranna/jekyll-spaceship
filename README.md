@@ -205,7 +205,7 @@ jekyll-spaceship:
       custom: ['@startuml', '@enduml']
     src: http://www.plantuml.com/plantuml/svg/
   mermaid-processor:
-    mode: default  # mode value 'pre-fetch' for fetching image at building stage
+    mode: default  # 'pre-build' renders locally, 'pre-fetch' fetches at build time
     css:
       class: mermaid
     syntax:
@@ -724,6 +724,52 @@ pie title Pets adopted by volunteers
 Code above would be parsed as:
 
 ![Mermaid Diagram](https://user-images.githubusercontent.com/9413601/85282355-2e317300-b4be-11ea-9c30-8f9d61540d14.png)
+
+#### Local pre-build rendering
+
+Local rendering is an optional integration because the current version of
+[`jekyll-mermaid-prebuild`](https://github.com/Texarkanine/jekyll-mermaid-prebuild)
+requires Ruby 3.3 or newer and Jekyll 4. Add it explicitly to your site's
+`Gemfile`:
+
+```ruby
+group :jekyll_plugins do
+  gem 'jekyll-spaceship'
+  gem 'jekyll-mermaid-prebuild'
+end
+```
+
+Then install the Ruby dependencies:
+
+```sh
+bundle install
+```
+
+`jekyll-mermaid-prebuild` also requires the `mmdc` executable. It can be
+installed in the site's JavaScript dependencies (recommended):
+
+```sh
+npm install --save-dev @mermaid-js/mermaid-cli
+```
+
+Alternatively, install it globally:
+
+```sh
+npm install --global @mermaid-js/mermaid-cli
+```
+
+Finally, enable local rendering in `_config.yml`:
+
+```yaml
+jekyll-spaceship:
+  mermaid-processor:
+    mode: pre-build
+```
+
+Jekyll Spaceship looks for `mmdc` in the site's `node_modules/.bin` directory
+and in `PATH`. If the gem is unavailable, `mmdc` cannot be executed, or local
+rendering fails, it falls back to `pre-fetch` and finally to the configured
+URL.
 
 ### 5. Media Usage
 

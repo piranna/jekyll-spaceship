@@ -2,6 +2,7 @@
 
 require "net/http"
 require "base64"
+require "tempfile"
 
 module Jekyll::Spaceship
   class MermaidProcessor < Processor
@@ -65,20 +66,73 @@ module Jekyll::Spaceship
 
       # encode to UTF-8
       code = code.encode('UTF-8')
-      url = get_url(code)
 
       # render mode
-      case self.config['mode']
-      when 'pre-fetch'
-        data = self.class.fetch_img_data(url)
-      end
+      mode = self.config['mode']
+
+      data = render_mermaid_locally(code) if mode == 'pre-build'
       if data.nil?
-        data = { 'type' => 'url', 'body' => url }
+        url = get_url(code)
+
+        data = self.class.fetch_img_data(url) \
+          if ['pre-build', 'pre-fetch'].include?(mode)
+
+        if data.nil?
+          data = { 'type' => 'url', 'body' => url }
+        end
       end
 
       # return img tag
       data['class'] = self.config['css']['class']
       self.class.make_img_tag(data)
+    end
+
+    def render_mermaid_locally(code)
+      require 'jekyll-mermaid-prebuild'
+
+      cli_dir = local_mermaid_cli_dir
+      unless cli_dir || JekyllMermaidPrebuild::MmdcWrapper.available?
+        logger.log 'mmdc not found; falling back to pre-fetch'
+        return
+      end
+
+      svg = Tempfile.new(['jekyll-spaceship-mermaid', '.svg'])
+      begin
+        rendered = with_mermaid_cli_path(cli_dir) do
+          JekyllMermaidPrebuild::MmdcWrapper.render(code, svg.path)
+        end
+        return unless rendered
+
+        { 'type' => 'image/svg+xml', 'body' => File.read(svg.path) }
+      ensure
+        svg.close!
+      end
+    rescue LoadError, StandardError => error
+      logger.log "local Mermaid rendering failed: #{error.message}; falling back to pre-fetch"
+      nil
+    end
+
+    def local_mermaid_cli_dir
+      roots = [Dir.pwd]
+      roots.unshift(page.site.source) if page && page.respond_to?(:site) && page.site
+      roots.uniq.each do |root|
+        bin = File.join(root, 'node_modules', '.bin')
+        command = File.join(bin, Gem.win_platform? ? 'mmdc.cmd' : 'mmdc')
+        return bin if File.file?(command) && File.executable?(command)
+      end
+      nil
+    end
+
+    def with_mermaid_cli_path(cli_dir)
+      return yield unless cli_dir
+
+      original_path = ENV['PATH']
+      ENV['PATH'] = [cli_dir, original_path].compact.join(File::PATH_SEPARATOR)
+      begin
+        yield
+      ensure
+        ENV['PATH'] = original_path
+      end
     end
 
     def get_url(code)
