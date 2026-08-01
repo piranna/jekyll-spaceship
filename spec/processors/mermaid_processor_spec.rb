@@ -171,6 +171,43 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       expect(site.data['mermaid_prebuild_svgs']).to eq(result[:svgs])
     end
 
+    it 'uses configured mmdc arguments while still generating a linked figure' do
+      config['mmdc_args'] = ['--puppeteerConfigFile', 'puppeteer-config.json']
+      site = double(:site, :data => {})
+      processor.instance_variable_set(:@page, double(:page, :site => site))
+      prebuild_config = double(:prebuild_config, :cache_dir => '/cache')
+      generator = double(:generator)
+      digest_calculator = Class.new do
+        def self.content_digest(_content); end
+      end
+      configuration_class = Class.new do
+        def initialize(_site); end
+      end
+      generator_class = Class.new do
+        def initialize(_config); end
+      end
+      stub_const('JekyllMermaidPrebuild::DigestCalculator', digest_calculator)
+      stub_const('JekyllMermaidPrebuild::Configuration', configuration_class)
+      stub_const('JekyllMermaidPrebuild::Generator', generator_class)
+      allow(processor).to receive(:local_mermaid_cli_dir).and_return('/project/node_modules/.bin')
+      allow(processor).to receive(:with_mermaid_cli_path).and_yield
+      allow(JekyllMermaidPrebuild::Configuration).to receive(:new).with(site).and_return(prebuild_config)
+      allow(JekyllMermaidPrebuild::Generator).to receive(:new).with(prebuild_config).and_return(generator)
+      allow(JekyllMermaidPrebuild::DigestCalculator).to receive(:content_digest).and_return('digest')
+      allow(File).to receive(:exist?).with('/cache/digest.svg').and_return(false)
+      allow(FileUtils).to receive(:mkdir_p).with('/cache')
+      allow(processor).to receive(:render_mermaid_svg)
+        .with('graph TD; A-->B', '/cache/digest.svg').and_return(true)
+      allow(generator).to receive(:build_svg_url).with('digest').and_return('/assets/svg/digest.svg')
+      allow(generator).to receive(:build_figure_html)
+        .with('/assets/svg/digest.svg').and_return('<figure class="mermaid-diagram"></figure>')
+
+      expect(processor.render_mermaid_figure('graph TD; A-->B')).to eq(
+        '<figure class="mermaid-diagram"></figure>'
+      )
+      expect(site.data['mermaid_prebuild_svgs']).to eq('digest' => '/cache/digest.svg')
+    end
+
     it 'falls back when mmdc is unavailable' do
       allow(processor).to receive(:local_mermaid_cli_dir).and_return(nil)
       allow(JekyllMermaidPrebuild::MmdcWrapper).to receive(:available?).and_return(false)

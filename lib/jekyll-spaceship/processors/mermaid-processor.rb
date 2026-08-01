@@ -2,6 +2,7 @@
 
 require "net/http"
 require "base64"
+require "fileutils"
 require "open3"
 require "tempfile"
 
@@ -119,6 +120,10 @@ module Jekyll::Spaceship
         site = page.site
         prebuild_config = JekyllMermaidPrebuild::Configuration.new(site)
         generator = JekyllMermaidPrebuild::Generator.new(prebuild_config)
+        return render_configured_mermaid_figure(
+          code, site, prebuild_config, generator
+        ) unless mmdc_args.empty?
+
         result = JekyllMermaidPrebuild::Processor.new(prebuild_config, generator)
           .convert_block(:content => code)
         return unless result
@@ -163,8 +168,28 @@ module Jekyll::Spaceship
       nil
     end
 
+    def render_configured_mermaid_figure(code, site, prebuild_config, generator)
+      cache_key = JekyllMermaidPrebuild::DigestCalculator.content_digest(
+        ([code] + mmdc_args).join("\0")
+      )
+      cache_path = File.join(prebuild_config.cache_dir, "#{cache_key}.svg")
+
+      unless File.exist?(cache_path)
+        FileUtils.mkdir_p(prebuild_config.cache_dir)
+        return unless render_mermaid_svg(code, cache_path)
+      end
+
+      svgs = { cache_key => cache_path }
+      register_mermaid_prebuild_svgs(site, prebuild_config, svgs)
+      generator.build_figure_html(generator.build_svg_url(cache_key))
+    end
+
+    def mmdc_args
+      Array(config['mmdc_args']).map(&:to_s)
+    end
+
     def render_mermaid_svg(code, output_path)
-      args = Array(config['mmdc_args']).map(&:to_s)
+      args = mmdc_args
       return JekyllMermaidPrebuild::MmdcWrapper.render(code, output_path) if args.empty?
 
       input = Tempfile.new(['jekyll-spaceship-mermaid', '.mmd'])

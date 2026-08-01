@@ -855,25 +855,26 @@ jobs:
         run: bundle exec jekyll build
 ```
 
-##### Passing extra `mmdc` arguments in inline mode
+##### Passing extra `mmdc` arguments
 
 Use `mmdc_args` to pass additional Mermaid CLI arguments without a wrapper
-script when using `pre-build-inline`. For example, to select a Puppeteer
-configuration file:
+script in either local mode. For example, to select a Puppeteer configuration
+file while generating linked figures:
 
 ```yaml
 jekyll-spaceship:
   mermaid-processor:
-    mode: pre-build-inline
+    mode: pre-build
     mmdc_args:
       - --puppeteerConfigFile
       - .github/puppeteer-config.json
 ```
 
-When `mmdc_args` is empty or omitted, inline rendering continues to use the
-`jekyll-mermaid-prebuild` command wrapper directly. A failed local command
-still follows the normal local mode → `pre-fetch` → configured URL fallback
-chain.
+When `mmdc_args` is empty or omitted, rendering continues to use the
+`jekyll-mermaid-prebuild` command wrapper directly. With `pre-build`, configured
+arguments are applied while retaining the cached SVG and linked `<figure>`
+output. A failed local command still follows the normal local mode →
+`pre-fetch` → configured URL fallback chain.
 
 ##### Troubleshooting local rendering
 
