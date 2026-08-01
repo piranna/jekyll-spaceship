@@ -113,14 +113,23 @@ module Jekyll::Spaceship
     end
 
     def local_mermaid_cli_dir
-      roots = [Dir.pwd]
-      roots.unshift(page.site.source) if page && page.respond_to?(:site) && page.site
-      roots.uniq.each do |root|
+      local_mermaid_cli_roots.each do |root|
         bin = File.join(root, 'node_modules', '.bin')
-        command = File.join(bin, Gem.win_platform? ? 'mmdc.cmd' : 'mmdc')
-        return bin if File.file?(command) && File.executable?(command)
+        return bin if mermaid_cli_executable?(bin)
       end
       nil
+    end
+
+    def local_mermaid_cli_roots
+      roots = [Dir.pwd]
+      site = page.site if page && page.respond_to?(:site)
+      roots.unshift(site.source) if site
+      roots.uniq
+    end
+
+    def mermaid_cli_executable?(bin)
+      command = File.join(bin, Gem.win_platform? ? 'mmdc.cmd' : 'mmdc')
+      File.file?(command) && File.executable?(command)
     end
 
     def with_mermaid_cli_path(cli_dir)
