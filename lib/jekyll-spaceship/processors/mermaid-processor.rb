@@ -72,12 +72,15 @@ module Jekyll::Spaceship
       # render mode
       mode = self.config['mode']
 
-      data = render_mermaid_locally(code) if mode == 'pre-build'
+      figure = render_mermaid_figure(code) if mode == 'pre-build'
+      return figure unless figure.nil?
+
+      data = render_mermaid_locally(code) if mode == 'pre-build-inline'
       if data.nil?
         url = get_url(code)
 
         data = self.class.fetch_img_data(url) \
-          if ['pre-build', 'pre-fetch'].include?(mode)
+          if ['pre-build', 'pre-build-inline', 'pre-fetch'].include?(mode)
 
         if data.nil?
           data = { 'type' => 'url', 'body' => url }
@@ -87,6 +90,38 @@ module Jekyll::Spaceship
       # return img tag
       data['class'] = self.config['css']['class']
       self.class.make_img_tag(data)
+    end
+
+    def render_mermaid_figure(code)
+      require 'jekyll-mermaid-prebuild'
+
+      cli_dir = local_mermaid_cli_dir
+      unless cli_dir || JekyllMermaidPrebuild::MmdcWrapper.available?
+        logger.log 'mmdc not found; falling back to pre-fetch'
+        return
+      end
+
+      with_mermaid_cli_path(cli_dir) do
+        site = page.site
+        prebuild_config = JekyllMermaidPrebuild::Configuration.new(site)
+        generator = JekyllMermaidPrebuild::Generator.new(prebuild_config)
+        result = JekyllMermaidPrebuild::Processor.new(prebuild_config, generator)
+          .convert_block(:content => code)
+        return unless result
+
+        register_mermaid_prebuild_svgs(site, prebuild_config, result[:svgs])
+        result[:html]
+      end
+    rescue LoadError, StandardError => error
+      logger.log "local Mermaid rendering failed: #{error.message}; falling back to pre-fetch"
+      nil
+    end
+
+    def register_mermaid_prebuild_svgs(site, prebuild_config, svgs)
+      site.data['mermaid_prebuild_enabled'] = true
+      site.data['mermaid_prebuild_config'] = prebuild_config
+      site.data['mermaid_prebuild_svgs'] ||= {}
+      site.data['mermaid_prebuild_svgs'].merge!(svgs)
     end
 
     def render_mermaid_locally(code)

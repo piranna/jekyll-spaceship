@@ -205,7 +205,8 @@ jekyll-spaceship:
       custom: ['@startuml', '@enduml']
     src: http://www.plantuml.com/plantuml/svg/
   mermaid-processor:
-    mode: default  # 'pre-build' renders locally, 'pre-fetch' fetches at build time
+    # 'pre-build' creates a figure; 'pre-build-inline' embeds SVG; 'pre-fetch' fetches it
+    mode: default
     css:
       class: mermaid
     syntax:
@@ -785,6 +786,21 @@ jekyll-spaceship:
     mode: pre-build
 ```
 
+Two local output modes are available:
+
+| Mode | Output |
+|------|--------|
+| `pre-build` | Uses `jekyll-mermaid-prebuild` to generate a cached SVG file and its linked `<figure>` element. |
+| `pre-build-inline` | Generates the SVG locally and embeds the complete `<svg>` element directly in the page. |
+
+For inline output, use:
+
+```yaml
+jekyll-spaceship:
+  mermaid-processor:
+    mode: pre-build-inline
+```
+
 Jekyll Spaceship also checks the site's `node_modules/.bin` directory when it
 renders a diagram. If the gem is unavailable, `mmdc` cannot be executed, or
 local rendering fails, it falls back to `pre-fetch` and finally to the
@@ -839,23 +855,25 @@ jobs:
         run: bundle exec jekyll build
 ```
 
-##### Passing extra `mmdc` arguments
+##### Passing extra `mmdc` arguments in inline mode
 
 Use `mmdc_args` to pass additional Mermaid CLI arguments without a wrapper
-script. For example, to select a Puppeteer configuration file:
+script when using `pre-build-inline`. For example, to select a Puppeteer
+configuration file:
 
 ```yaml
 jekyll-spaceship:
   mermaid-processor:
-    mode: pre-build
+    mode: pre-build-inline
     mmdc_args:
       - --puppeteerConfigFile
       - .github/puppeteer-config.json
 ```
 
-When `mmdc_args` is empty or omitted, rendering continues to use
-`jekyll-mermaid-prebuild` directly. A failed command still follows the normal
-`pre-build` → `pre-fetch` → configured URL fallback chain.
+When `mmdc_args` is empty or omitted, inline rendering continues to use the
+`jekyll-mermaid-prebuild` command wrapper directly. A failed local command
+still follows the normal local mode → `pre-fetch` → configured URL fallback
+chain.
 
 ##### Troubleshooting local rendering
 
