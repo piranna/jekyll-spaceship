@@ -9,6 +9,12 @@ module Jekyll::Spaceship
   class MermaidProcessor < Processor
     exclude :none
 
+    LOCAL_RENDERERS = {
+      'pre-build' => :render_mermaid_figure,
+      'pre-build-inline' => :render_mermaid_locally
+    }.freeze
+    PRE_FETCH_MODES = (LOCAL_RENDERERS.keys + ['pre-fetch']).freeze
+
     def self.config
       {
         'mode' => 'default',
@@ -71,25 +77,33 @@ module Jekyll::Spaceship
 
       # render mode
       mode = self.config['mode']
+      rendered = render_mermaid_by_mode(code, mode)
+      return rendered if rendered.is_a?(String)
 
-      figure = render_mermaid_figure(code) if mode == 'pre-build'
-      return figure unless figure.nil?
-
-      data = render_mermaid_locally(code) if mode == 'pre-build-inline'
-      if data.nil?
-        url = get_url(code)
-
-        data = self.class.fetch_img_data(url) \
-          if ['pre-build', 'pre-build-inline', 'pre-fetch'].include?(mode)
-
-        if data.nil?
-          data = { 'type' => 'url', 'body' => url }
-        end
-      end
+      data = rendered || fallback_mermaid_data(code, mode)
 
       # return img tag
       data['class'] = self.config['css']['class']
       self.class.make_img_tag(data)
+    end
+
+    def render_mermaid_by_mode(code, mode)
+      renderer = LOCAL_RENDERERS[mode]
+      return unless renderer
+
+      rendered = send(renderer, code)
+      logger.log "#{mode} failed; falling back to pre-fetch" if rendered.nil?
+      rendered
+    end
+
+    def fallback_mermaid_data(code, mode)
+      url = get_url(code)
+      fallback = { 'type' => 'url', 'body' => url }
+      return fallback unless PRE_FETCH_MODES.include?(mode)
+
+      data = self.class.fetch_img_data(url)
+      logger.log 'pre-fetch failed; falling back to default URL' if data.nil?
+      data || fallback
     end
 
     def render_mermaid_figure(code)
@@ -97,7 +111,7 @@ module Jekyll::Spaceship
 
       cli_dir = local_mermaid_cli_dir
       unless cli_dir || JekyllMermaidPrebuild::MmdcWrapper.available?
-        logger.log 'mmdc not found; falling back to pre-fetch'
+        logger.log 'mmdc not found'
         return
       end
 
@@ -113,7 +127,7 @@ module Jekyll::Spaceship
         result[:html]
       end
     rescue LoadError, StandardError => error
-      logger.log "local Mermaid rendering failed: #{error.message}; falling back to pre-fetch"
+      logger.log "local Mermaid rendering failed: #{error.message}"
       nil
     end
 
@@ -129,7 +143,7 @@ module Jekyll::Spaceship
 
       cli_dir = local_mermaid_cli_dir
       unless cli_dir || JekyllMermaidPrebuild::MmdcWrapper.available?
-        logger.log 'mmdc not found; falling back to pre-fetch'
+        logger.log 'mmdc not found'
         return
       end
 
@@ -145,7 +159,7 @@ module Jekyll::Spaceship
         svg.close!
       end
     rescue LoadError, StandardError => error
-      logger.log "local Mermaid rendering failed: #{error.message}; falling back to pre-fetch"
+      logger.log "local Mermaid rendering failed: #{error.message}"
       nil
     end
 

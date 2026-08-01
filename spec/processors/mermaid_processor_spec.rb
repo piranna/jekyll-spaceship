@@ -52,6 +52,10 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       it 'falls back from local rendering to pre-fetch and then to the URL' do
         allow(processor).to receive(:render_mermaid_locally).and_return(nil)
         allow(described_class).to receive(:fetch_img_data).with(url).and_return(nil)
+        expect(logger).to receive(:log)
+          .with('pre-build-inline failed; falling back to pre-fetch').ordered
+        expect(logger).to receive(:log)
+          .with('pre-fetch failed; falling back to default URL').ordered
 
         expect(processor.handle_mermaid('graph TD; A-->B')).to eq(
           'type' => 'url', 'body' => url, 'class' => 'mermaid'
@@ -61,6 +65,8 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       it 'uses pre-fetched data when local rendering fails' do
         allow(processor).to receive(:render_mermaid_locally).and_return(nil)
         allow(described_class).to receive(:fetch_img_data).with(url).and_return(remote)
+        expect(logger).to receive(:log)
+          .with('pre-build-inline failed; falling back to pre-fetch')
 
         expect(processor.handle_mermaid('graph TD; A-->B')).to eq(remote.merge('class' => 'mermaid'))
       end
@@ -80,6 +86,10 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       it 'falls back from figure generation to pre-fetch and then to the URL' do
         allow(processor).to receive(:render_mermaid_figure).and_return(nil)
         allow(described_class).to receive(:fetch_img_data).with(url).and_return(nil)
+        expect(logger).to receive(:log)
+          .with('pre-build failed; falling back to pre-fetch').ordered
+        expect(logger).to receive(:log)
+          .with('pre-fetch failed; falling back to default URL').ordered
 
         expect(processor.handle_mermaid('graph TD; A-->B')).to eq(
           'type' => 'url', 'body' => url, 'class' => 'mermaid'
@@ -93,6 +103,15 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       it 'pre-fetches the remote image' do
         allow(described_class).to receive(:fetch_img_data).with(url).and_return(remote)
         expect(processor.handle_mermaid('graph TD; A-->B')).to eq(remote.merge('class' => 'mermaid'))
+      end
+
+      it 'logs before falling back to the URL' do
+        allow(described_class).to receive(:fetch_img_data).with(url).and_return(nil)
+        expect(logger).to receive(:log).with('pre-fetch failed; falling back to default URL')
+
+        expect(processor.handle_mermaid('graph TD; A-->B')).to eq(
+          'type' => 'url', 'body' => url, 'class' => 'mermaid'
+        )
       end
     end
 
@@ -156,14 +175,14 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       allow(processor).to receive(:local_mermaid_cli_dir).and_return(nil)
       allow(JekyllMermaidPrebuild::MmdcWrapper).to receive(:available?).and_return(false)
 
-      expect(logger).to receive(:log).with('mmdc not found; falling back to pre-fetch')
+      expect(logger).to receive(:log).with('mmdc not found')
       expect(processor.render_mermaid_figure('graph TD')).to be_nil
     end
 
     it 'logs and falls back when figure generation raises' do
       allow(processor).to receive(:local_mermaid_cli_dir).and_raise(Errno::ENOENT, 'mmdc')
 
-      expect(logger).to receive(:log).with(/local Mermaid rendering failed: .*mmdc.*falling back/)
+      expect(logger).to receive(:log).with(/local Mermaid rendering failed: .*mmdc/)
       expect(processor.render_mermaid_figure('graph TD')).to be_nil
     end
   end
@@ -252,14 +271,14 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       allow(processor).to receive(:local_mermaid_cli_dir).and_return(nil)
       allow(JekyllMermaidPrebuild::MmdcWrapper).to receive(:available?).and_return(false)
 
-      expect(logger).to receive(:log).with('mmdc not found; falling back to pre-fetch')
+      expect(logger).to receive(:log).with('mmdc not found')
       expect(processor.render_mermaid_locally('graph TD')).to be_nil
     end
 
     it 'logs the error and falls back when the integration raises' do
       allow(processor).to receive(:local_mermaid_cli_dir).and_raise(Errno::ENOENT, 'mmdc')
 
-      expect(logger).to receive(:log).with(/local Mermaid rendering failed: .*mmdc.*falling back/)
+      expect(logger).to receive(:log).with(/local Mermaid rendering failed: .*mmdc/)
       expect(processor.render_mermaid_locally('graph TD')).to be_nil
     end
   end
