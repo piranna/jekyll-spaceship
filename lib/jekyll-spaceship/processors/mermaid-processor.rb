@@ -2,6 +2,7 @@
 
 require "net/http"
 require "base64"
+require "open3"
 require "tempfile"
 
 module Jekyll::Spaceship
@@ -21,6 +22,7 @@ module Jekyll::Spaceship
         'config': {
           'theme' => 'default'
         },
+        'mmdc_args' => [],
         'src' => 'https://mermaid.ink/svg/'
       }
     end
@@ -99,7 +101,7 @@ module Jekyll::Spaceship
       svg = Tempfile.new(['jekyll-spaceship-mermaid', '.svg'])
       begin
         rendered = with_mermaid_cli_path(cli_dir) do
-          JekyllMermaidPrebuild::MmdcWrapper.render(code, svg.path)
+          render_mermaid_svg(code, svg.path)
         end
         return unless rendered
 
@@ -110,6 +112,24 @@ module Jekyll::Spaceship
     rescue LoadError, StandardError => error
       logger.log "local Mermaid rendering failed: #{error.message}; falling back to pre-fetch"
       nil
+    end
+
+    def render_mermaid_svg(code, output_path)
+      args = Array(config['mmdc_args']).map(&:to_s)
+      return JekyllMermaidPrebuild::MmdcWrapper.render(code, output_path) if args.empty?
+
+      input = Tempfile.new(['jekyll-spaceship-mermaid', '.mmd'])
+      begin
+        input.write(code)
+        input.close
+        command = JekyllMermaidPrebuild::MmdcWrapper::MMDC_COMMAND
+        _, _, status = Open3.capture3(
+          command, '-i', input.path, '-o', output_path, '-e', 'svg', *args
+        )
+        status.success?
+      ensure
+        input.close!
+      end
     end
 
     def local_mermaid_cli_dir

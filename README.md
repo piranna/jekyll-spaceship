@@ -729,8 +729,8 @@ Code above would be parsed as:
 
 Local rendering is an optional integration because the current version of
 [`jekyll-mermaid-prebuild`](https://github.com/Texarkanine/jekyll-mermaid-prebuild)
-requires Ruby 3.3 or newer and Jekyll 4. Add it explicitly to your site's
-`Gemfile`:
+requires Ruby 3.3 or newer and Jekyll 4. Use a Ruby version supported by the
+gem and Jekyll 4 or newer, then add it explicitly to your site's `Gemfile`:
 
 ```ruby
 group :jekyll_plugins do
@@ -745,18 +745,37 @@ Then install the Ruby dependencies:
 bundle install
 ```
 
-`jekyll-mermaid-prebuild` also requires the `mmdc` executable. It can be
-installed in the site's JavaScript dependencies (recommended):
+`jekyll-mermaid-prebuild` also requires the `mmdc` executable. Add Mermaid CLI
+to the site's `package.json` so builds use a reproducible version:
 
-```sh
-npm install --save-dev @mermaid-js/mermaid-cli
+```json
+{
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "^11.16.0"
+  }
+}
 ```
 
-Alternatively, install it globally:
+Install it from `package-lock.json`, or generate/update the lock file when one
+does not exist:
 
 ```sh
-npm install --global @mermaid-js/mermaid-cli
+npm ci
+# or: npm install
 ```
+
+Before starting Jekyll, put the local executable in `PATH`. This is required
+because `jekyll-mermaid-prebuild` checks for `mmdc` during Jekyll
+initialization:
+
+```sh
+export PATH="$PWD/node_modules/.bin:$PATH"
+bundle exec jekyll build
+```
+
+Alternatively, install Mermaid CLI globally with
+`npm install --global @mermaid-js/mermaid-cli`. The directory containing that
+global `mmdc` executable must still be present in `PATH` before Jekyll starts.
 
 Finally, enable local rendering in `_config.yml`:
 
@@ -766,10 +785,110 @@ jekyll-spaceship:
     mode: pre-build
 ```
 
-Jekyll Spaceship looks for `mmdc` in the site's `node_modules/.bin` directory
-and in `PATH`. If the gem is unavailable, `mmdc` cannot be executed, or local
-rendering fails, it falls back to `pre-fetch` and finally to the configured
-URL.
+Jekyll Spaceship also checks the site's `node_modules/.bin` directory when it
+renders a diagram. If the gem is unavailable, `mmdc` cannot be executed, or
+local rendering fails, it falls back to `pre-fetch` and finally to the
+configured URL.
+
+##### GitHub Actions example
+
+This example uses Ubuntu 24.04 package names. Keep the package list aligned
+with the Linux image used by your workflow.
+
+```yaml
+name: Build Jekyll site
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Chrome runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2t64 libatk-bridge2.0-0 libatk1.0-0 libcups2 \
+            libdrm2 libgbm1 libgtk-3-0 libnss3 libx11-xcb1 \
+            libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2
+
+      - name: Install Mermaid CLI
+        run: |
+          npm ci
+          # Optional if the npm install did not download a compatible browser:
+          npx puppeteer browsers install chrome
+
+      - name: Add local executables to PATH
+        run: echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Build site
+        run: bundle exec jekyll build
+```
+
+##### Passing extra `mmdc` arguments
+
+Use `mmdc_args` to pass additional Mermaid CLI arguments without a wrapper
+script. For example, to select a Puppeteer configuration file:
+
+```yaml
+jekyll-spaceship:
+  mermaid-processor:
+    mode: pre-build
+    mmdc_args:
+      - --puppeteerConfigFile
+      - .github/puppeteer-config.json
+```
+
+When `mmdc_args` is empty or omitted, rendering continues to use
+`jekyll-mermaid-prebuild` directly. A failed command still follows the normal
+`pre-build` → `pre-fetch` → configured URL fallback chain.
+
+##### Troubleshooting local rendering
+
+###### `mmdc not found`
+
+Run `npm ci` or `npm install` after adding `@mermaid-js/mermaid-cli` to the
+site's development dependencies, then add `$PWD/node_modules/.bin` to `PATH`
+before Jekyll starts. For a global installation, verify that `mmdc --version`
+works in the same shell that runs `bundle exec jekyll build`.
+
+###### `Puppeteer cannot launch headless Chrome`
+
+Mermaid CLI uses Puppeteer and Chrome. Linux runners and containers must have
+Chrome's shared-library dependencies installed. Consult the
+[Puppeteer troubleshooting guide](https://pptr.dev/troubleshooting) for the
+package list matching your Linux distribution. If Chrome itself is missing,
+`npx puppeteer browsers install chrome` can install a compatible browser.
+
+###### Chrome sandbox errors in CI
+
+Some restricted CI/container environments cannot use Chrome's sandbox. Create
+`puppeteer-config.json` only when the runner requires this workaround:
+
+```json
+{
+  "args": ["--no-sandbox", "--disable-setuid-sandbox"]
+}
+```
+
+Then pass it through `mmdc_args` as shown above. Mermaid CLI receives it as
+`--puppeteerConfigFile .github/puppeteer-config.json`. Disabling Chrome's
+sandbox reduces isolation, so use these flags only on trusted, isolated CI
+runners where sandboxing is unavailable.
 
 ### 5. Media Usage
 

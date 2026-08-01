@@ -23,6 +23,7 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       'mode' => mode,
       'css' => { 'class' => 'mermaid' },
       'config' => { 'theme' => 'default' },
+      'mmdc_args' => [],
       'src' => 'https://mermaid.ink/svg/'
     }
   end
@@ -75,6 +76,7 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
     end
 
     it 'uses a URL in default mode' do
+      expect(described_class).not_to receive(:fetch_img_data)
       expect(processor.handle_mermaid('graph TD; A-->B')).to eq(
         'type' => 'url', 'body' => url, 'class' => 'mermaid'
       )
@@ -88,6 +90,7 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
         def self.available?; end
         def self.render(_code, _path); end
       end
+      wrapper.const_set(:MMDC_COMMAND, 'mmdc')
       stub_const('JekyllMermaidPrebuild::MmdcWrapper', wrapper)
       allow(processor).to receive(:require).with('jekyll-mermaid-prebuild').and_return(true)
     end
@@ -111,6 +114,36 @@ RSpec.describe Jekyll::Spaceship::MermaidProcessor do
       allow(JekyllMermaidPrebuild::MmdcWrapper).to receive(:render).and_return(false)
 
       expect(processor.render_mermaid_locally('invalid')).to be_nil
+    end
+
+    it 'passes configured arguments directly to mmdc' do
+      config['mmdc_args'] = ['--puppeteerConfigFile', '.github/puppeteer-config.json']
+      allow(processor).to receive(:local_mermaid_cli_dir).and_return('/project/node_modules/.bin')
+      allow(processor).to receive(:with_mermaid_cli_path).and_yield
+      expect(JekyllMermaidPrebuild::MmdcWrapper).not_to receive(:render)
+      allow(Open3).to receive(:capture3) do |*command|
+        File.write(command[4], '<svg>configured</svg>')
+        ['', '', instance_double(Process::Status, :success? => true)]
+      end
+
+      expect(processor.render_mermaid_locally('graph TD; A-->B')).to eq(
+        'type' => 'image/svg+xml', 'body' => '<svg>configured</svg>'
+      )
+      expect(Open3).to have_received(:capture3).with(
+        'mmdc', '-i', kind_of(String), '-o', kind_of(String), '-e', 'svg',
+        '--puppeteerConfigFile', '.github/puppeteer-config.json'
+      )
+    end
+
+    it 'returns nil when mmdc fails with configured arguments' do
+      config['mmdc_args'] = ['--puppeteerConfigFile', 'puppeteer-config.json']
+      allow(processor).to receive(:local_mermaid_cli_dir).and_return(nil)
+      allow(JekyllMermaidPrebuild::MmdcWrapper).to receive(:available?).and_return(true)
+      allow(Open3).to receive(:capture3).and_return(
+        ['', 'Chrome failed', instance_double(Process::Status, :success? => false)]
+      )
+
+      expect(processor.render_mermaid_locally('graph TD; A-->B')).to be_nil
     end
 
     it 'logs and falls back when no CLI is available' do
